@@ -6,7 +6,7 @@ It is supposed to be a quite small app with Django-based web interface and two m
 
 ## TODO:
 
-- [ ] Init Django app
+- [x] Init Django app
 - [ ] Init Cassandra
 - [ ] Add an ability to manage Cassandra tables via Django
 - [ ] Create the classification module
