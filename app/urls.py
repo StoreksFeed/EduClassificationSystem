@@ -1,7 +1,10 @@
 from django.urls import path
 
-from .views import indexPageView
+from .views import *
 
 urlpatterns = [
-    path('', indexPageView, name='index')
+    path('', listEntriesView, name='index'),
+    path('entry/add/', addEntryView, name='addEntry'),
+    path('entry/edit/<uuid:uuid>/', editEntryView, name='editEntry'),
+    path('entry/delete/<uuid:uuid>/', deleteEntryView, name='deleteEntry')
 ]

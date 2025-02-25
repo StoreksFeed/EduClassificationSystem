@@ -1,0 +1,11 @@
+asgiref==3.8.1
+click==8.1.8
+colorama==0.4.6
+Django==5.1.6
+django-cassandra-engine==1.9.0
+geomet==0.2.1.post1
+PyYAML==6.0.2
+scylla-driver==3.28.2
+six==1.17.0
+sqlparse==0.5.3
+tzdata==2025.1

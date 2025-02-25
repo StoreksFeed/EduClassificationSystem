@@ -1,0 +1,29 @@
+# Ignore Python bytecode files
+*.pyc
+*.pyo
+*.pyd
+__pycache__
+
+# Ignore virtual environment directories
+venv/
+env/
+
+# Ignore local settings
+.env
+*.env
+
+# Ignore database files
+*.sqlite3
+
+# Ignore Django static files
+staticfiles/
+media/
+
+# Ignore Docker-related files
+Dockerfile
+docker-compose.yml
+
+# Ignore other unnecessary files
+*.log
+*.bak
+*.swp
