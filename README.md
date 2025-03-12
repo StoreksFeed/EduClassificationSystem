@@ -15,5 +15,5 @@ It is supposed to be a quite small app with Django-based web interface and two m
 > sounds like a quite good idea, so here it is
 - [x] Add an ability to manage Cassandra tables via Django
 - [ ] Create all the models required
-- [ ] Create the classification module
+- [x] Create the classification module
 - [ ] Add some sort of classification web interface

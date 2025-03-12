@@ -1,5 +1,3 @@
-version: '3.8'
-
 services:
   db:
     image: cassandra:latest
@@ -10,16 +8,35 @@ services:
       - cassandra_data:/var/lib/cassandra
     networks:
       - django_network
+    healthcheck:
+      test: ["CMD-SHELL", "cqlsh -e 'SELECT now() FROM system.local;'"]
+      interval: 30s
+      timeout: 10s
+      retries: 5
 
   web:
-    build: .
+    build: ./web
     command: python manage.py runserver 0.0.0.0:8000
     volumes:
-      - .:/code
+      - ./web:/code
     ports:
       - "8000:8000"
     depends_on:
-      - db
+      db:
+        condition: service_healthy
+    networks:
+      - django_network
+
+  classifier:
+    build: ./classifier
+    command: python classify.py
+    volumes:
+      - ./classifier:/code
+    ports:
+      - "8010:8010"
+    depends_on:
+      db:
+        condition: service_healthy
     networks:
       - django_network
 

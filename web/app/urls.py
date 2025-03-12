@@ -7,4 +7,6 @@ urlpatterns = [
     path('entry/add/', addEntryView, name='addEntry'),
     path('entry/edit/<uuid:uuid>/', editEntryView, name='editEntry'),
     path('entry/delete/<uuid:uuid>/', deleteEntryView, name='deleteEntry')
+    # path('entry/embed/', embedEntryView, name='embedEntry'),
+    # path('entry/group/', groupEntryView, name='groupEntry')
 ]
