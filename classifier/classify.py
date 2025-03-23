@@ -1,14 +1,21 @@
+from collections import defaultdict
+from http.server import HTTPServer, BaseHTTPRequestHandler
 import re
 import string
+import sys
+import uuid
+
+from cassandra.cluster import Cluster
+
 import numpy as np
+
 import torch
-from sklearn.metrics.pairwise import cosine_similarity
 from transformers import BertTokenizer, BertModel
+
 from sklearn.cluster import KMeans
 from sklearn.metrics import silhouette_score
-from http.server import HTTPServer, BaseHTTPRequestHandler
-from cassandra.cluster import Cluster
-import uuid
+from sklearn.metrics.pairwise import cosine_similarity
+
 
 def fprint(text, length=80):
     padding = (length - len(text) - 2) // 2
@@ -16,16 +23,13 @@ def fprint(text, length=80):
 
 
 def clean_text(text):
-    text = text.lower()
     text = re.sub(f'[{re.escape(string.punctuation)}]', '', text)
     text = re.sub(r'\s+', ' ', text).strip()
     return text
 
 
 def get_global_model(model_name):
-    # check if there are global variables
     if model_name not in globals():
-        # if not, create a global variable
         globals()[model_name] = [
             BertTokenizer.from_pretrained(model_name),
             BertModel.from_pretrained(model_name),
@@ -43,15 +47,14 @@ def get_bert_embeddings(texts, model_name='DeepPavlov/rubert-base-cased'):
     return torch.mean(outputs.last_hidden_state, dim=1).detach().numpy()
 
 
-def best_kmeans_n_clusters(text_e):
-    # Determine the optimal number of clusters using Silhouette Score
-    range_n_clusters = list(range(2, len(text_e) - 1))
+def best_kmeans_n_clusters(embeddings):
+    range_n_clusters = list(range(2, len(embeddings) - 1))
     best_n_clusters = 2
     best_silhouette_score = -1
     for n_clusters in range_n_clusters:
         kmeans = KMeans(n_clusters=n_clusters, random_state=42)
-        cluster_labels = kmeans.fit_predict(text_e)
-        silhouette_avg = silhouette_score(text_e, cluster_labels)
+        cluster_labels = kmeans.fit_predict(embeddings)
+        silhouette_avg = silhouette_score(embeddings, cluster_labels)
         print(f'For n_clusters = {n_clusters}, the average score is : {silhouette_avg}')
         if silhouette_avg > best_silhouette_score:
             best_silhouette_score = silhouette_avg
@@ -59,16 +62,12 @@ def best_kmeans_n_clusters(text_e):
     print(f'Optimal number of clusters: {best_n_clusters}')
     return best_n_clusters
 
-def classify():
+def clustering():
     cluster = Cluster(['db'])
     session = cluster.connect('coursework')
-    rows = session.execute('SELECT * FROM entry')
-    rows = [(row.uuid, row.text) for row in rows]
-    embeddings = np.array(list(get_bert_embeddings(clean_text(row[1])) for row in rows)).reshape((-1, 768))
-
-    # Calculate cross text cosine similarity
-    similarity_text = cosine_similarity(embeddings, embeddings)
-    print(similarity_text)
+    entries = session.execute('SELECT * FROM entry')
+    entries = [(entry.uuid, entry.text) for entry in entries]
+    embeddings = np.array(list(get_bert_embeddings(clean_text(entry[1])) for entry in entries)).reshape((-1, 768))
 
     # Perform K-Means clustering with the optimal number of clusters
     fprint('K-Means Clustering')
@@ -77,37 +76,59 @@ def classify():
     labels = kmeans.fit_predict(embeddings)
 
     # Generate UUIDs for each label
-    label_to_uuid = {label: str(uuid.uuid4()) for label in labels}
+    label_to_uuid = {label: uuid.uuid4() for label in labels}
+    uuid_labels = [label_to_uuid[label] for label in labels]
 
     # Group texts based on clustering labels
-    grouped_texts = {}
-    grouped_embeddings = {}
-    for label, row_uuid, row_embedding in zip(labels, [row[0] for row in rows], embeddings):
-        if label_to_uuid[label] not in grouped_texts:
-            grouped_texts[label_to_uuid[label]] = []
-            grouped_embeddings[label_to_uuid[label]] = []
-        grouped_texts[label_to_uuid[label]].append(row_uuid)
-        grouped_embeddings[label_to_uuid[label]].append(row_embedding)
+    grouped_texts = defaultdict(list)
+    grouped_embeddings = defaultdict(list)
+    for uuid_label, row_uuid, row_embedding in zip(uuid_labels, [entry[0] for entry in entries], embeddings):
+        grouped_texts[uuid_label].append(row_uuid)
+        grouped_embeddings[uuid_label].append(row_embedding)
 
     fprint('Grouped Texts')
+    session.execute('TRUNCATE group')
     # Print grouped texts
     for uuid_label, group in grouped_texts.items(): # grouped is with uuids in labels
         print(f'Group {uuid_label}:')
-        for row_uuid in group:
-            print(f'  - {row_uuid}')
-            session.execute(f"UPDATE entry SET group = {uuid_label} WHERE uuid = {row_uuid}")
-
+        for entry_uuid in group:
+            print(f'  - {entry_uuid}')
+            session.execute(f"UPDATE entry SET group = {uuid_label}, status = 1 WHERE uuid = {entry_uuid}")
 
     # Seems to not work properly. Yet.
-    # common_vectors = {}
-    # for uuid_label, embeddings in grouped_embeddings.items(): # grouped is with uuids in labels
-    #     common_vectors[uuid_label] = np.mean(embeddings, axis=0).tolist()
-    #     session.execute(f"INSERT INTO group (uuid, vector) VALUES (%s, %s)", (uuid_label, common_vectors[uuid_label]))
+    common_vectors = {}
+    for uuid_label, embeddings in grouped_embeddings.items(): # grouped is with uuids in labels
+        common_vectors[uuid_label] = np.mean(embeddings, axis=0).tolist()
+        session.execute(f"INSERT INTO group (uuid, count, vector) VALUES (%s, %s, %s)", (uuid_label, len(embeddings), common_vectors[uuid_label]))
 
-    # fprint('Common Vectors')
-    # similarity_1 = cosine_similarity(embeddings, list(common_vectors.values()))
-    # for text, sim in zip([row.text for row in rows], similarity_1):
-    #     print(f'{text[:20]} -> {sim}')
+    cluster.shutdown()
+
+def classification(entry_uuid):
+    cluster = Cluster(['db'])
+    session = cluster.connect('coursework')
+    entry = session.execute(f'SELECT * FROM entry WHERE uuid = {entry_uuid}').one()
+    entry = (entry.uuid, entry.text)
+
+    embedding = np.array(list(get_bert_embeddings(clean_text(entry[1])))).reshape((-1, 768))
+
+    groups = session.execute('SELECT * FROM group')
+    groups = [(group.uuid, group.count, np.array(group.vector)) for group in groups]
+    similarity = cosine_similarity(embedding, [group[2] for group in groups])
+    for sim, group, count, vector in zip(similarity[0], [group[0] for group in groups], [group[1] for group in groups], [group[2] for group in groups]):
+        if sim >= 0.9:
+            print(f'{entry_uuid} -> Group {group}')
+            session.execute(f"UPDATE entry SET group = {group}, status = 2 WHERE uuid = {entry_uuid}")
+            session.execute(f"UPDATE group SET count = {count + 1} WHERE uuid = {group}")
+            new_vector = (embedding[0] + count * vector) / (count + 1)
+            session.execute(f"UPDATE group SET vector = {new_vector.tolist()} WHERE uuid = {group}")
+            break
+    else:
+        print(f'{entry_uuid} -> No group found')
+        group = str(uuid.uuid4())
+        session.execute(f"INSERT INTO group (uuid, count, vector) VALUES (%s, %s, %s)", (group, 1, embedding[0].tolist()))
+        session.execute(f"UPDATE entry SET group = {group} WHERE uuid = {uuid}")
+
+    cluster.shutdown()
 
 
 class RequestHandler(BaseHTTPRequestHandler):
@@ -115,14 +136,39 @@ class RequestHandler(BaseHTTPRequestHandler):
         self.send_response(200)
         self.send_header('Content-type', 'text/plain')
         self.end_headers()
-        classify()
-        self.wfile.write('Classification completed'.encode())
+        self.wfile.write('OK'.encode())
 
-def run(server_class=HTTPServer, handler_class=RequestHandler, port=8010):
-    server_address = ('', port)
-    httpd = server_class(server_address, handler_class)
+    def do_POST(self):
+        if self.path.startswith('/clustering'):
+            self.send_response(200)
+            self.send_header('Content-type', 'text/plain')
+            self.end_headers()
+            clustering()
+            self.wfile.write(f'Clustering completed'.encode())
+
+        elif self.path.startswith('/classification/'):
+            uuid = self.path.split('/')[-1]
+            self.send_response(200)
+            self.send_header('Content-type', 'text/plain')
+            self.end_headers()
+            classification(uuid)
+            self.wfile.write(f'Classification completed for UUID: {uuid}'.encode())
+
+        else:
+            self.send_response(404)
+            self.send_header('Content-type', 'text/plain')
+            self.end_headers()
+            self.wfile.write('Invalid endpoint'.encode())
+
+def runserver(port):
+    httpd = HTTPServer(('', port), RequestHandler)
     print(f'Starting httpd server on port {port}')
     httpd.serve_forever()
 
 if __name__ == '__main__':
-    run()
+    if sys.argv[1] == 'download_model':
+        get_global_model(sys.argv[2])
+    elif sys.argv[1] == 'runserver':
+        runserver(int(sys.argv[2]))
+    else:
+        print('Not a valid option')

@@ -6,14 +6,17 @@ ENV PYTHONDONTWRITEBYTECODE=1
 ENV PYTHONUNBUFFERED=1
 
 # Set work directory
-WORKDIR /code
+WORKDIR /app
 
 # Install dependencies
-COPY requirements.txt /code/
-RUN pip install --upgrade pip
-RUN pip install cassandra-driver
-RUN pip install torch==2.6.0+cpu --index-url https://download.pytorch.org/whl/cpu
-RUN pip install -r /code/requirements.txt
+COPY requirements.txt .
+RUN pip install -r requirements.txt
 
 # Copy project
-COPY . /code/
+COPY . /app
+
+# Download the model
+RUN python classify.py download_model DeepPavlov/rubert-base-cased
+
+EXPOSE 8010
+CMD ["python", "classify.py", "runserver", "8010"]

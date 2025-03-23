@@ -13,10 +13,12 @@ services:
       interval: 30s
       timeout: 10s
       retries: 5
+    restart: on-failure
 
   web:
     build: ./web
-    command: python manage.py runserver 0.0.0.0:8000
+    command: >
+      sh -c "python manage.py sync_cassandra && python manage.py runserver 0.0.0.0:8000"
     volumes:
       - ./web:/code
     ports:
@@ -26,10 +28,16 @@ services:
         condition: service_healthy
     networks:
       - django_network
+    healthcheck:
+      test: ["CMD", "curl", "-f", "http://localhost:8000/healthcheck"]
+      interval: 30s
+      timeout: 10s
+      retries: 5
+    restart: on-failure
 
   classifier:
     build: ./classifier
-    command: python classify.py
+    command: python classify.py runserver 8010
     volumes:
       - ./classifier:/code
     ports:
@@ -39,6 +47,7 @@ services:
         condition: service_healthy
     networks:
       - django_network
+    restart: on-failure
 
 networks:
   django_network:

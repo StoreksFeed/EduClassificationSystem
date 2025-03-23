@@ -8,13 +8,35 @@
 </head>
 <body>
     <h1>Курсач</h1>
+
+    {% if messages %}
+        <ul>
+            {% for message in messages %}
+                <li class="{{ message.tags }}">{{ message }}</li>
+            {% endfor %}
+        </ul>
+    {% endif %}
+
+    <form action="{% url 'addEntry' %}" method="get">
+        <button type="submit">Добавить</button>
+    </form>
+
+    <form action="{% url 'clusterise' %}" method="post">
+        {% csrf_token %}
+        <button type="submit">Кластеризовать все</button>
+    </form>
+
     <h2>Список текста:</h2>
     <ul>
         {% for entry in entries %}
             <li>
-                {{ entry.uuid }} | {{ entry.text }} | {{ entry.group }}
+                {{ entry.uuid }} | {{ entry.text }} | {{ entry.status }} | {{ entry.group }}
                 <form action="{% url 'editEntry' entry.uuid %}" method="get">
                     <button type="submit">Изменить</button>
+                </form>
+                <form action="{% url 'classifyEntry' entry.uuid %}" method="post">
+                    {% csrf_token %}
+                    <button type="submit">Классифицировать</button>
                 </form>
                 <form action="{% url 'deleteEntry' entry.uuid %}" method="post">
                     {% csrf_token %}
@@ -22,9 +44,5 @@
                 </form>
         {% endfor %}
     </ul>
-
-    <form action="{% url 'addEntry' %}" method="get">
-        <button type="submit">Добавить</button>
-    </form>
 </body>
 </html>

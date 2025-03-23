@@ -8,12 +8,16 @@ It is supposed to be a quite small app with Django-based web interface and two m
 
 - [x] Init Django app
 - [x] Init Cassandra
-- [x] Pack it all in Docker container
+- [x] Pack it all in Docker containers
 > It seems like cassandra-driver reaaaaally struggles to work under Windows
 > instead opting for crashing any Python app without any logs whatsoever.
 > After a day of painful debugging I decided that running it under Linux
 > sounds like a quite good idea, so here it is
 - [x] Add an ability to manage Cassandra tables via Django
-- [ ] Create all the models required
-- [x] Create the classification module
-- [ ] Add some sort of classification web interface
+- [x] Create all the models required
+- [x] Implement clustering (for all entries)
+- [x] Implement classification (for single entry based on created groups)
+- [x] Add Django buttons to trigger classifier
+- [ ] Prepare test dataset
+- [ ] Make clustering performance better (try GridSearch)
+- [ ] Update web interface (grid layout and CSS)
