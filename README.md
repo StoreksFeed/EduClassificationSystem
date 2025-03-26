@@ -4,6 +4,12 @@ This repo contains the source code for my 6th semester Software Engineering Cour
 
 It is supposed to be a quite small app with Django-based web interface and two modules: one for storing texts and one for classifying them
 
+## Build and run
+
+```
+docker-compose up --build
+```
+
 ## TODO:
 
 - [x] Init Django app
@@ -18,6 +24,6 @@ It is supposed to be a quite small app with Django-based web interface and two m
 - [x] Implement clustering (for all entries)
 - [x] Implement classification (for single entry based on created groups)
 - [x] Add Django buttons to trigger classifier
+- [x] Make clustering performance better
 - [ ] Prepare test dataset
-- [ ] Make clustering performance better (try GridSearch)
 - [ ] Update web interface (grid layout and CSS)

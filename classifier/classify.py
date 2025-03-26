@@ -1,7 +1,7 @@
 from collections import defaultdict
 from http.server import HTTPServer, BaseHTTPRequestHandler
+from json import dumps
 import re
-import string
 import sys
 import uuid
 
@@ -17,156 +17,289 @@ from sklearn.metrics import silhouette_score
 from sklearn.metrics.pairwise import cosine_similarity
 
 
-def fprint(text, length=80):
+def pad_pring(text, length=80):
+    """
+    Print a text with a specified length and padding.
+
+    Args:
+        text (str): Text to be printed.
+        length (int): Length of the output line.
+    """
+
     padding = (length - len(text) - 2) // 2
     print(f"{'-' * padding} {text} {'-' * padding}")
 
 
 def clean_text(text):
-    text = re.sub(f'[{re.escape(string.punctuation)}]', '', text)
+    """
+    Clean a given text by removing extra spaces and unwanted characters.
+
+    Args:
+        text (str): Input text to be cleaned.
+
+    Returns:
+        str: Cleaned text.
+    """
+
     text = re.sub(r'\s+', ' ', text).strip()
+    text = re.sub(r'[^\w\s.,!?()\-\u2013\u2014]', '', text)
+
     return text
 
 
 def get_global_model(model_name):
+    """
+    Get a model from the global scope or download it if it doesn't exist.
+
+    Args:
+        model_name (str): Name of the model to be loaded.
+
+    Returns:
+        list: List of the tokenizer and model objects.
+    """
+
     if model_name not in globals():
         globals()[model_name] = [
             BertTokenizer.from_pretrained(model_name),
             BertModel.from_pretrained(model_name),
         ]
+
     return globals()[model_name]
 
 
-def get_bert_embeddings(texts, model_name='DeepPavlov/rubert-base-cased'):
+def get_bert_embeddings(texts, model_name):
+    """
+    Get BERT embeddings for a given list of texts.
+
+    Args:
+        texts (list): List of texts to be embedded.
+        model_name (str): Name of the BERT model to be used.
+
+    Returns:
+        np.ndarray: Array of BERT embeddings.
+    """
+
     tokenizer, model = get_global_model(model_name)
-    inputs = tokenizer(texts, return_tensors='pt', padding=True, truncation=True)
-    
+    inputs = tokenizer(texts, return_tensors='pt',
+                       padding=True, truncation=True)
+
     with torch.no_grad():
         outputs = model(**inputs)
-    
+
     return torch.mean(outputs.last_hidden_state, dim=1).detach().numpy()
 
 
-def best_kmeans_n_clusters(embeddings):
-    range_n_clusters = list(range(2, len(embeddings) - 1))
-    best_n_clusters = 2
-    best_silhouette_score = -1
-    for n_clusters in range_n_clusters:
-        kmeans = KMeans(n_clusters=n_clusters, random_state=42)
-        cluster_labels = kmeans.fit_predict(embeddings)
-        silhouette_avg = silhouette_score(embeddings, cluster_labels)
-        print(f'For n_clusters = {n_clusters}, the average score is : {silhouette_avg}')
-        if silhouette_avg > best_silhouette_score:
-            best_silhouette_score = silhouette_avg
-            best_n_clusters = n_clusters
-    print(f'Optimal number of clusters: {best_n_clusters}')
-    return best_n_clusters
+def best_clustering(embeddings):
+    """
+    Perform K-Means clustering on a given set of embeddings and return labels with the best silhouette score.
+
+    Args:
+        embeddings (np.ndarray): Array of embeddings to be clustered.
+
+    Returns:
+        np.ndarray: Array of cluster labels.
+    """
+
+    array = np.array([])
+
+    for n_clusters in range(3, len(embeddings) // 2):
+        labels = KMeans(n_clusters=n_clusters,
+                        random_state=69).fit_predict(embeddings)
+        silhouette = silhouette_score(embeddings, labels)
+        array = np.append(array, silhouette)
+        print(f'For n_clusters = {n_clusters}, the score is : {silhouette}')
+
+    best_n_clusters = np.argmax(array) + 3
+    print(f'Best number of clusters: {best_n_clusters}')
+
+    labels = KMeans(n_clusters=best_n_clusters,
+                    random_state=69).fit_predict(embeddings)
+
+    return labels
+
 
 def clustering():
+    """"
+    Perform clustering on the entries in the database.
+    """
+
     cluster = Cluster(['db'])
     session = cluster.connect('coursework')
-    entries = session.execute('SELECT * FROM entry')
-    entries = [(entry.uuid, entry.text) for entry in entries]
-    embeddings = np.array(list(get_bert_embeddings(clean_text(entry[1])) for entry in entries)).reshape((-1, 768))
+    entries = [{
+        'uuid': row.uuid,
+        'text': row.text
+    } for row in
+        session.execute('SELECT * FROM entry')
+    ]
+    embeddings = get_bert_embeddings(list(
+        clean_text(entry['text']) for entry in entries
+    ), 'DeepPavlov/rubert-base-cased').reshape((-1, 768))
 
-    # Perform K-Means clustering with the optimal number of clusters
-    fprint('K-Means Clustering')
-    best_n_clusters = best_kmeans_n_clusters(embeddings)
-    kmeans = KMeans(n_clusters=best_n_clusters, random_state=42)
-    labels = kmeans.fit_predict(embeddings)
+    pad_pring('K-Means Clustering')
+    labels = best_clustering(embeddings)
 
-    # Generate UUIDs for each label
     label_to_uuid = {label: uuid.uuid4() for label in labels}
     uuid_labels = [label_to_uuid[label] for label in labels]
 
-    # Group texts based on clustering labels
     grouped_texts = defaultdict(list)
     grouped_embeddings = defaultdict(list)
-    for uuid_label, row_uuid, row_embedding in zip(uuid_labels, [entry[0] for entry in entries], embeddings):
-        grouped_texts[uuid_label].append(row_uuid)
+    for uuid_label, entry, row_embedding in zip(uuid_labels, entries, embeddings):
+        grouped_texts[uuid_label].append(entry['uuid'])
         grouped_embeddings[uuid_label].append(row_embedding)
 
-    fprint('Grouped Texts')
+    pad_pring('Grouped Texts')
     session.execute('TRUNCATE group')
-    # Print grouped texts
-    for uuid_label, group in grouped_texts.items(): # grouped is with uuids in labels
+    for uuid_label, group in grouped_texts.items():
         print(f'Group {uuid_label}:')
         for entry_uuid in group:
             print(f'  - {entry_uuid}')
-            session.execute(f"UPDATE entry SET group = {uuid_label}, status = 1 WHERE uuid = {entry_uuid}")
+            session.execute(
+                f"UPDATE entry SET group = {uuid_label}, status = 1 WHERE uuid = {entry_uuid}")
 
-    # Seems to not work properly. Yet.
     common_vectors = {}
-    for uuid_label, embeddings in grouped_embeddings.items(): # grouped is with uuids in labels
+    for uuid_label, embeddings in grouped_embeddings.items():
         common_vectors[uuid_label] = np.mean(embeddings, axis=0).tolist()
-        session.execute(f"INSERT INTO group (uuid, count, vector) VALUES (%s, %s, %s)", (uuid_label, len(embeddings), common_vectors[uuid_label]))
+        session.execute(f"INSERT INTO group (uuid, count, vector) VALUES (%s, %s, %s)",
+                        (uuid_label, len(embeddings), common_vectors[uuid_label]))
 
     cluster.shutdown()
 
+    return len(embeddings), len(grouped_texts)
+
+
 def classification(entry_uuid):
+    """
+    Perform classification on a single entry in the database."
+
+    Args:
+        entry_uuid (str): UUID of the entry to be classified.
+    """
+
     cluster = Cluster(['db'])
     session = cluster.connect('coursework')
-    entry = session.execute(f'SELECT * FROM entry WHERE uuid = {entry_uuid}').one()
-    entry = (entry.uuid, entry.text)
+    text = session.execute(
+        f"SELECT text FROM entry WHERE uuid = {entry_uuid}"
+    ).one().text
 
-    embedding = np.array(list(get_bert_embeddings(clean_text(entry[1])))).reshape((-1, 768))
+    embedding = np.array(list(get_bert_embeddings(
+        clean_text(text)))).reshape((-1, 768))
 
-    groups = session.execute('SELECT * FROM group')
-    groups = [(group.uuid, group.count, np.array(group.vector)) for group in groups]
-    similarity = cosine_similarity(embedding, [group[2] for group in groups])
-    for sim, group, count, vector in zip(similarity[0], [group[0] for group in groups], [group[1] for group in groups], [group[2] for group in groups]):
-        if sim >= 0.9:
-            print(f'{entry_uuid} -> Group {group}')
-            session.execute(f"UPDATE entry SET group = {group}, status = 2 WHERE uuid = {entry_uuid}")
-            session.execute(f"UPDATE group SET count = {count + 1} WHERE uuid = {group}")
-            new_vector = (embedding[0] + count * vector) / (count + 1)
-            session.execute(f"UPDATE group SET vector = {new_vector.tolist()} WHERE uuid = {group}")
-            break
+    groups = [
+        {
+            'uuid': group.uuid,
+            'count': group.count,
+            'vector': group.vector
+        } for group in
+        session.execute('SELECT * FROM group')
+    ]
+    similarity = cosine_similarity(
+        embedding, [np.array(group.vector) for group in groups]
+    )
+
+    best_group = None
+    best_similarity = 0.0
+
+    for sim, group in zip(similarity[0], groups):
+        if sim >= 0.9 and sim > best_similarity:
+            best_group = group
+            best_similarity = sim
+
+    if best_group:
+        print(f'{entry_uuid} -> Best Group {best_group["uuid"]} with similarity {best_similarity}')
+        session.execute(
+            f"UPDATE entry SET group = {best_group['uuid']}, status = 2 WHERE uuid = {entry_uuid}"
+        )
+        session.execute(
+            f"UPDATE group SET count = {best_group['count'] + 1} WHERE uuid = {best_group['uuid']}"
+        )
+        new_vector = (embedding[0] + best_group['count'] *
+                    np.array(best_group['vector'])) / (best_group['count'] + 1)
+        session.execute(
+            f"UPDATE group SET vector = {new_vector.tolist()} WHERE uuid = {best_group['uuid']}"
+        )
     else:
         print(f'{entry_uuid} -> No group found')
-        group = str(uuid.uuid4())
-        session.execute(f"INSERT INTO group (uuid, count, vector) VALUES (%s, %s, %s)", (group, 1, embedding[0].tolist()))
-        session.execute(f"UPDATE entry SET group = {group} WHERE uuid = {uuid}")
+        new_group_uuid = str(uuid.uuid4())
+        session.execute(
+            f"INSERT INTO group (uuid, count, vector) VALUES (%s, %s, %s)",
+            (new_group_uuid, 1, embedding[0].tolist())
+        )
+        session.execute(
+            f"UPDATE entry SET group = {new_group_uuid}, status = 2 WHERE uuid = {entry_uuid}"
+        )
 
     cluster.shutdown()
 
 
 class RequestHandler(BaseHTTPRequestHandler):
     def do_GET(self):
-        self.send_response(200)
-        self.send_header('Content-type', 'text/plain')
-        self.end_headers()
-        self.wfile.write('OK'.encode())
+        if self.path.startswith('/status'):
+            self.send_response(200)
+            self.send_header('Content-type', 'application/json')
+            self.end_headers()
+
+            message = {"status": "OK"}
+
+            self.wfile.write(dumps(message).encode())
+
+        else:
+            self.send_response(404)
+            self.send_header('Content-type', 'application/json')
+            self.end_headers()
+
+            message = {"status": "ERROR", "error": "Not found"}
+
+            self.wfile.write(dumps(message).encode())
 
     def do_POST(self):
         if self.path.startswith('/clustering'):
             self.send_response(200)
-            self.send_header('Content-type', 'text/plain')
+            self.send_header('Content-type', 'application/json')
             self.end_headers()
-            clustering()
-            self.wfile.write(f'Clustering completed'.encode())
+
+            try:
+                entries, groups = clustering()
+                message = {"status": "OK",
+                           "entries": entries, "groups": groups}
+            except Exception as e:
+                message = {"status": "ERROR", "error": str(e)}
+
+            self.wfile.write(dumps(message).encode())
 
         elif self.path.startswith('/classification/'):
             uuid = self.path.split('/')[-1]
             self.send_response(200)
-            self.send_header('Content-type', 'text/plain')
+            self.send_header('Content-type', 'application/json')
             self.end_headers()
-            classification(uuid)
-            self.wfile.write(f'Classification completed for UUID: {uuid}'.encode())
+
+            try:
+                classification(uuid)
+                message = {"status": "OK", "uuid": uuid}
+            except Exception as e:
+                message = {"status": "ERROR", "error": str(e)}
+
+            self.wfile.write(dumps(message).encode())
 
         else:
             self.send_response(404)
-            self.send_header('Content-type', 'text/plain')
+            self.send_header('Content-type', 'application/json')
             self.end_headers()
-            self.wfile.write('Invalid endpoint'.encode())
+
+            message = {"status": "ERROR", "error": "Not found"}
+
+            self.wfile.write(dumps(message).encode())
+
 
 def runserver(port):
     httpd = HTTPServer(('', port), RequestHandler)
     print(f'Starting httpd server on port {port}')
     httpd.serve_forever()
 
+
 if __name__ == '__main__':
-    if sys.argv[1] == 'download_model':
+    if len(sys.argv) < 2:
+        print('Usage: python classify.py <option> <args>')
+    elif sys.argv[1] == 'download_model':
         get_global_model(sys.argv[2])
     elif sys.argv[1] == 'runserver':
         runserver(int(sys.argv[2]))
