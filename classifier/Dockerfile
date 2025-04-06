@@ -1,4 +1,3 @@
-# Use the official Tensorflow image
 FROM python:3.12-slim
 
 # Set environment variables
@@ -12,11 +11,13 @@ WORKDIR /app
 COPY requirements.txt .
 RUN pip install -r requirements.txt
 
+# Copy the downloaded model from the builder stage
+COPY download.py .
+RUN python download.py get_model DeepPavlov/rubert-base-cased
+RUN python download.py get_morph
+
 # Copy project
 COPY . /app
 
-# Download the model
-RUN python classify.py download_model DeepPavlov/rubert-base-cased
-
-EXPOSE 8010
-CMD ["python", "classify.py", "runserver", "8010"]
+EXPOSE 8001
+CMD ["python", "classifier.py", "runserver", "8001"]

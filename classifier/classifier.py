@@ -6,15 +6,14 @@ import sys
 import uuid
 
 from cassandra.cluster import Cluster
-
 import numpy as np
-
 import torch
-from transformers import BertTokenizer, BertModel
 
-from sklearn.cluster import KMeans
+from sklearn.cluster import AgglomerativeClustering
 from sklearn.metrics import silhouette_score
 from sklearn.metrics.pairwise import cosine_similarity
+
+from download import get_model, get_morph
 
 
 def pad_pring(text, length=80):
@@ -32,39 +31,30 @@ def pad_pring(text, length=80):
 
 def clean_text(text):
     """
-    Clean a given text by removing extra spaces and unwanted characters.
+    Clean a given text by removing extra spaces, unwanted characters, stopwords,
+    and applying lemmatization for Russian text.
 
     Args:
         text (str): Input text to be cleaned.
 
     Returns:
-        str: Cleaned text.
+        str: Cleaned and preprocessed text.
     """
 
     text = re.sub(r'\s+', ' ', text).strip()
-    text = re.sub(r'[^\w\s.,!?()\-\u2013\u2014]', '', text)
+    text = re.sub(r'[^\w\s.,!?()_[]\-\u2013\u2014]', '', text)
 
-    return text
+    words = text.split()
 
+    russian_stopwords, morph = get_morph()
 
-def get_global_model(model_name):
-    """
-    Get a model from the global scope or download it if it doesn't exist.
+    cleaned_words = [
+        morph.parse(word)[0].normal_form
+        for word in words
+        if word.lower() not in russian_stopwords
+    ]
 
-    Args:
-        model_name (str): Name of the model to be loaded.
-
-    Returns:
-        list: List of the tokenizer and model objects.
-    """
-
-    if model_name not in globals():
-        globals()[model_name] = [
-            BertTokenizer.from_pretrained(model_name),
-            BertModel.from_pretrained(model_name),
-        ]
-
-    return globals()[model_name]
+    return ' '.join(cleaned_words)
 
 
 def get_bert_embeddings(texts, model_name):
@@ -79,7 +69,7 @@ def get_bert_embeddings(texts, model_name):
         np.ndarray: Array of BERT embeddings.
     """
 
-    tokenizer, model = get_global_model(model_name)
+    tokenizer, model = get_model(model_name)
     inputs = tokenizer(texts, return_tensors='pt',
                        padding=True, truncation=True)
 
@@ -103,8 +93,8 @@ def best_clustering(embeddings):
     array = np.array([])
 
     for n_clusters in range(3, len(embeddings) // 2):
-        labels = KMeans(n_clusters=n_clusters,
-                        random_state=69).fit_predict(embeddings)
+        labels = AgglomerativeClustering(
+            n_clusters=n_clusters).fit_predict(embeddings)
         silhouette = silhouette_score(embeddings, labels)
         array = np.append(array, silhouette)
         print(f'For n_clusters = {n_clusters}, the score is : {silhouette}')
@@ -112,19 +102,19 @@ def best_clustering(embeddings):
     best_n_clusters = np.argmax(array) + 3
     print(f'Best number of clusters: {best_n_clusters}')
 
-    labels = KMeans(n_clusters=best_n_clusters,
-                    random_state=69).fit_predict(embeddings)
+    labels = AgglomerativeClustering(
+        n_clusters=best_n_clusters).fit_predict(embeddings)
 
     return labels
 
 
-def clustering():
+def clustering(cluster_count=None):
     """"
     Perform clustering on the entries in the database.
     """
 
-    cluster = Cluster(['db'])
-    session = cluster.connect('coursework')
+    cluster = Cluster(['db0', 'db1'])
+    session = cluster.connect('educational_materials')
     entries = [{
         'uuid': row.uuid,
         'text': row.text
@@ -136,7 +126,11 @@ def clustering():
     ), 'DeepPavlov/rubert-base-cased').reshape((-1, 768))
 
     pad_pring('K-Means Clustering')
-    labels = best_clustering(embeddings)
+    if cluster_count:
+        labels = AgglomerativeClustering(
+            n_clusters=cluster_count).fit_predict(embeddings)
+    else:
+        labels = best_clustering(embeddings)
 
     label_to_uuid = {label: uuid.uuid4() for label in labels}
     uuid_labels = [label_to_uuid[label] for label in labels]
@@ -175,14 +169,15 @@ def classification(entry_uuid):
         entry_uuid (str): UUID of the entry to be classified.
     """
 
-    cluster = Cluster(['db'])
-    session = cluster.connect('coursework')
+    cluster = Cluster(['db0', 'db1'])
+    session = cluster.connect('educational_materials')
     text = session.execute(
         f"SELECT text FROM entry WHERE uuid = {entry_uuid}"
     ).one().text
 
-    embedding = np.array(list(get_bert_embeddings(
-        clean_text(text)))).reshape((-1, 768))
+    embedding = get_bert_embeddings(list(
+        clean_text(text)
+    ), 'DeepPavlov/rubert-base-cased').reshape((-1, 768))
 
     groups = [
         {
@@ -193,19 +188,20 @@ def classification(entry_uuid):
         session.execute('SELECT * FROM group')
     ]
     similarity = cosine_similarity(
-        embedding, [np.array(group.vector) for group in groups]
+        embedding, [np.array(group['vector']) for group in groups]
     )
 
     best_group = None
     best_similarity = 0.0
 
     for sim, group in zip(similarity[0], groups):
-        if sim >= 0.9 and sim > best_similarity:
+        if sim >= 0.8 and sim > best_similarity:
             best_group = group
             best_similarity = sim
 
     if best_group:
-        print(f'{entry_uuid} -> Best Group {best_group["uuid"]} with similarity {best_similarity}')
+        print(
+            f'{entry_uuid} -> Best Group {best_group["uuid"]} with similarity {best_similarity}')
         session.execute(
             f"UPDATE entry SET group = {best_group['uuid']}, status = 2 WHERE uuid = {entry_uuid}"
         )
@@ -213,13 +209,13 @@ def classification(entry_uuid):
             f"UPDATE group SET count = {best_group['count'] + 1} WHERE uuid = {best_group['uuid']}"
         )
         new_vector = (embedding[0] + best_group['count'] *
-                    np.array(best_group['vector'])) / (best_group['count'] + 1)
+                      np.array(best_group['vector'])) / (best_group['count'] + 1)
         session.execute(
             f"UPDATE group SET vector = {new_vector.tolist()} WHERE uuid = {best_group['uuid']}"
         )
     else:
         print(f'{entry_uuid} -> No group found')
-        new_group_uuid = str(uuid.uuid4())
+        new_group_uuid = uuid.uuid4()
         session.execute(
             f"INSERT INTO group (uuid, count, vector) VALUES (%s, %s, %s)",
             (new_group_uuid, 1, embedding[0].tolist())
@@ -233,7 +229,7 @@ def classification(entry_uuid):
 
 class RequestHandler(BaseHTTPRequestHandler):
     def do_GET(self):
-        if self.path.startswith('/status'):
+        if self.path.startswith('/healthcheck'):
             self.send_response(200)
             self.send_header('Content-type', 'application/json')
             self.end_headers()
@@ -242,23 +238,18 @@ class RequestHandler(BaseHTTPRequestHandler):
 
             self.wfile.write(dumps(message).encode())
 
-        else:
-            self.send_response(404)
-            self.send_header('Content-type', 'application/json')
-            self.end_headers()
-
-            message = {"status": "ERROR", "error": "Not found"}
-
-            self.wfile.write(dumps(message).encode())
-
-    def do_POST(self):
-        if self.path.startswith('/clustering'):
+        elif self.path.startswith('/clustering/'):
             self.send_response(200)
             self.send_header('Content-type', 'application/json')
             self.end_headers()
 
             try:
-                entries, groups = clustering()
+                cluster_count = int(self.path.split('/')[-1])
+            except:
+                cluster_count = None
+
+            try:
+                entries, groups = clustering(cluster_count)
                 message = {"status": "OK",
                            "entries": entries, "groups": groups}
             except Exception as e:
@@ -299,8 +290,6 @@ def runserver(port):
 if __name__ == '__main__':
     if len(sys.argv) < 2:
         print('Usage: python classify.py <option> <args>')
-    elif sys.argv[1] == 'download_model':
-        get_global_model(sys.argv[2])
     elif sys.argv[1] == 'runserver':
         runserver(int(sys.argv[2]))
     else:

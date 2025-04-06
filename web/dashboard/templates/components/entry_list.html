@@ -1,0 +1,88 @@
+<div class="grid grid-cols-1 md:grid-cols-2 gap-4">
+    {% for entry in page_obj %}
+    <div class="flex flex-col justify-between h-64 p-4 bg-white rounded shadow dark:bg-gray-800">
+        <p class="mb-2 text-sm text-gray-600 dark:text-gray-400">UUID: {{ entry.uuid }}</p>
+        <div class="flex-1 mb-2 overflow-y-scroll" id="text-container-{{ entry.uuid }}">
+            <p class="text-lg font-medium" id="text-view-{{ entry.uuid }}">{{ entry.text }}</p>
+            <textarea id="text-edit-{{ entry.uuid }}"
+                class="hidden w-full h-full px-2 py-1 border rounded resize-none dark:bg-gray-700 dark:border-gray-600"></textarea>
+        </div>
+        <div class="mt-auto">
+            <p class="mb-2 text-sm text-gray-500 dark:text-gray-400">
+                Статус: {{ entry.get_status_display }} |
+                Группа:
+                <a href="?searchType=group&searchQuery={{ entry.group }}" class="hover:underline">
+                    {{ entry.get_group_display }}
+                </a>
+            </p>
+            <div class="flex gap-2">
+                <button onclick="toggleEdit('{{ entry.uuid }}')"
+                    class="text-blue-500 hover:text-blue-700 dark:text-blue-300 dark:hover:text-blue-400">
+                    <i class="fas fa-edit"></i>
+                </button>
+                <form action="{% url 'editEntry' entry.uuid %}" method="post" class="hidden"
+                    id="save-form-{{ entry.uuid }}" onsubmit="submitEdit('{{ entry.uuid }}')">
+                    {% csrf_token %}
+                    <input type="hidden" name="text" id="text-input-{{ entry.uuid }}">
+                    <button type="submit"
+                        class="text-green-500 hover:text-green-700 dark:text-green-300 dark:hover:text-green-400">
+                        <i class="fas fa-save"></i>
+                    </button>
+                </form>
+                <form action="{% url 'classifyEntry' entry.uuid %}" method="post">
+                    {% csrf_token %}
+                    <button type="submit"
+                        class="text-green-500 hover:text-green-700 dark:text-green-300 dark:hover:text-green-400">
+                        <i class="fas fa-tags"></i>
+                    </button>
+                </form>
+                <form action="{% url 'deleteEntry' entry.uuid %}" method="post"
+                    onsubmit="return confirmDelete('{{ entry.uuid }}')">
+                    {% csrf_token %}
+                    <button type="submit"
+                        class="text-red-500 hover:text-red-700 dark:text-red-300 dark:hover:text-red-400">
+                        <i class="fas fa-trash"></i>
+                    </button>
+                </form>
+            </div>
+        </div>
+    </div>
+    {% endfor %}
+</div>
+
+<script>
+    function toggleEdit(uuid) {
+        const textView = document.getElementById(`text-view-${uuid}`);
+        const textEdit = document.getElementById(`text-edit-${uuid}`);
+        const saveForm = document.getElementById(`save-form-${uuid}`);
+        const textContainer = document.getElementById(`text-container-${uuid}`);
+
+        if (textEdit.classList.contains('hidden')) {
+            // Switch to edit mode
+            textEdit.value = textView.textContent;
+            textView.classList.add('hidden');
+            textEdit.classList.remove('hidden');
+            saveForm.classList.remove('hidden');
+            textContainer.classList.remove('overflow-y-scroll'); // Disable scrolling on parent
+            textEdit.focus();
+        } else {
+            // Switch to view mode
+            textView.classList.remove('hidden');
+            textEdit.classList.add('hidden');
+            saveForm.classList.add('hidden');
+            textContainer.classList.add('overflow-y-scroll'); // Enable scrolling on parent
+        }
+    }
+
+    function submitEdit(uuid) {
+        const textInput = document.getElementById(`text-input-${uuid}`);
+        const textEdit = document.getElementById(`text-edit-${uuid}`);
+        textInput.value = textEdit.value;
+    }
+</script>
+
+<script>
+    function confirmDelete(uuid) {
+        return confirm(`Вы уверены, что хотите удалить запись с UUID: ${uuid}?`);
+    }
+</script>

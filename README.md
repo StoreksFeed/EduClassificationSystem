@@ -2,7 +2,10 @@
 
 This repo contains the source code for my 6th semester Software Engineering Coursework.
 
-It is supposed to be a quite small app with Django-based web interface and two modules: one for storing texts and one for classifying them
+It is a Docker Compose project with 3 containers:
+- Django based web-app for user interaction,
+- database (Apache Cassandra),
+- and a clustering/classification module for text.
 
 ## Build and run
 
@@ -24,6 +27,9 @@ docker-compose up --build
 - [x] Implement clustering (for all entries)
 - [x] Implement classification (for single entry based on created groups)
 - [x] Add Django buttons to trigger classifier
-- [x] Make clustering performance better
-- [ ] Prepare test dataset
-- [ ] Update web interface (grid layout and CSS)
+- [x] Prepare test dataset
+- [x] Update web interface (grid layout and CSS)
+> Now it looks much better and supports dark mode
+- [ ] Make metrics for clustering perfomance based on a book headers
+- [ ] Check options in sklearn.cluster
+- [ ] Compare against STC and Lingo (with the same metrics)

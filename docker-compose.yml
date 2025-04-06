@@ -1,13 +1,37 @@
 services:
-  db:
+  db0:
     image: cassandra:latest
-    container_name: cassandra
-    ports:
-      - "9042:9042"
+    container_name: cassandra-0
     volumes:
-      - cassandra_data:/var/lib/cassandra
+      - cassandra-0:/var/lib/cassandra
     networks:
-      - django_network
+      - docker_network
+    environment:
+      - CASSANDRA_CLUSTER_NAME=db_cluster
+      - CASSANDRA_SEEDS=db0
+      - CASSANDRA_START_RPC=true
+      - CASSANDRA_BROADCAST_ADDRESS=db0
+      - CASSANDRA_LISTEN_ADDRESS=db0
+    healthcheck:
+      test: ["CMD-SHELL", "cqlsh -e 'SELECT now() FROM system.local;'"]
+      interval: 30s
+      timeout: 10s
+      retries: 5
+    restart: on-failure
+
+  db1:
+    image: cassandra:latest
+    container_name: cassandra-1
+    volumes:
+      - cassandra-1:/var/lib/cassandra
+    networks:
+      - docker_network
+    environment:
+      - CASSANDRA_CLUSTER_NAME=db_cluster
+      - CASSANDRA_SEEDS=db0
+      - CASSANDRA_START_RPC=true
+      - CASSANDRA_BROADCAST_ADDRESS=db1
+      - CASSANDRA_LISTEN_ADDRESS=db1
     healthcheck:
       test: ["CMD-SHELL", "cqlsh -e 'SELECT now() FROM system.local;'"]
       interval: 30s
@@ -17,6 +41,7 @@ services:
 
   web:
     build: ./web
+    container_name: web-0
     command: >
       sh -c "python manage.py sync_cassandra && python manage.py runserver 0.0.0.0:8000"
     volumes:
@@ -24,12 +49,14 @@ services:
     ports:
       - "8000:8000"
     depends_on:
-      db:
+      db0:
+        condition: service_healthy
+      db1:
         condition: service_healthy
     networks:
-      - django_network
+      - docker_network
     healthcheck:
-      test: ["CMD", "curl", "-f", "http://localhost:8000/healthcheck"]
+      test: ["CMD", "python", "healthcheck.py"]
       interval: 30s
       timeout: 10s
       retries: 5
@@ -37,21 +64,30 @@ services:
 
   classifier:
     build: ./classifier
-    command: python classify.py runserver 8010
+    container_name: classifier-0
+    command: python classifier.py runserver 8001
     volumes:
       - ./classifier:/code
     ports:
-      - "8010:8010"
+      - "8001:8001"
     depends_on:
-      db:
+      db0:
+        condition: service_healthy
+      db1:
         condition: service_healthy
     networks:
-      - django_network
+      - docker_network
+    healthcheck:
+      test: ["CMD", "python", "healthcheck.py"]
+      interval: 30s
+      timeout: 10s
+      retries: 5
     restart: on-failure
 
 networks:
-  django_network:
+  docker_network:
     driver: bridge
 
 volumes:
-  cassandra_data:
+  cassandra-0:
+  cassandra-1:

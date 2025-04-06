@@ -1,0 +1,32 @@
+<div class="mb-6">
+    <form action="{% url 'index' %}" method="get" class="flex items-center gap-4" onsubmit="cleanForm(this)">
+        <div>
+            <label for="searchType" class="text-sm font-medium">Искать по UUID:</label>
+            <select id="searchType" name="searchType"
+                class="px-2 py-1 border rounded dark:bg-gray-700 dark:border-gray-600">
+                <option value="group" {% if request.GET.searchType == "group" %}selected{% endif %}>группы</option>
+                <option value="entry" {% if request.GET.searchType == "entry" %}selected{% endif %}>записи</option>
+            </select>
+        </div>
+        <div>
+            <label for="searchQuery" class="text-sm font-medium">UUID для поиска:</label>
+            <input type="text" id="searchQuery" name="searchQuery"
+                class="w-64 px-2 py-1 border rounded dark:bg-gray-700 dark:border-gray-600">
+        </div>
+        <button type="submit"
+            class="px-4 py-2 bg-blue-500 text-white rounded hover:bg-blue-600 dark:bg-blue-700 dark:hover:bg-blue-800">
+            Найти записи
+        </button>
+    </form>
+</div>
+
+<script>
+    function cleanForm(form) {
+        const inputs = form.querySelectorAll('input, select');
+        inputs.forEach(input => {
+            if (!input.value.trim()) {
+                input.name = '';
+            }
+        });
+    }
+</script>
