@@ -1,29 +1,33 @@
 {% load querystring %}
 
 <div class="mt-6 flex justify-center">
-    <nav class="inline-flex rounded-md shadow">
+    <nav class="inline-flex rounded-xl shadow-lg bg-white/30 backdrop-blur-md dark:bg-gray-700/20">
         {% if page_obj.has_previous %}
         <a href="?{% querystring request page=page_obj.previous_page_number %}"
-            class="px-4 py-2 rounded-l-md bg-gray-200 text-gray-700 hover:bg-gray-300 dark:bg-gray-700 dark:text-gray-200 dark:hover:bg-gray-600">
+            class="px-4 py-2 rounded-l-xl text-gray-700 hover:bg-white/40 dark:text-gray-200 dark:hover:bg-gray-700">
             Предыдущая
         </a>
         {% else %}
         <span
-            class="px-4 py-2 rounded-l-md bg-gray-100 text-gray-400 dark:bg-gray-800 dark:text-gray-500">Предыдущая</span>
+            class="px-4 py-2 rounded-l-xl text-gray-400 bg-white/20 dark:text-gray-500 dark:bg-gray-700">
+            Предыдущая
+        </span>
         {% endif %}
 
-        <span class="px-4 py-2 bg-gray-100 text-gray-700 dark:bg-gray-800 dark:text-gray-200">
+        <span class="px-4 py-2 text-gray-700 bg-white/20 dark:text-gray-200 dark:bg-gray-700">
             Страница {{ page_obj.number }} из {{ page_obj.paginator.num_pages }}
         </span>
 
         {% if page_obj.has_next %}
         <a href="?{% querystring request page=page_obj.next_page_number %}"
-            class="px-4 py-2 rounded-r-md bg-gray-200 text-gray-700 hover:bg-gray-300 dark:bg-gray-700 dark:text-gray-200 dark:hover:bg-gray-600">
+            class="px-4 py-2 rounded-r-xl text-gray-700 hover:bg-white/40 dark:text-gray-200 dark:hover:bg-gray-700">
             Следующая
         </a>
         {% else %}
         <span
-            class="px-4 py-2 rounded-r-md bg-gray-100 text-gray-400 dark:bg-gray-800 dark:text-gray-500">Следующая</span>
+            class="px-4 py-2 rounded-r-xl text-gray-400 bg-white/20 dark:text-gray-500 dark:bg-gray-700">
+            Следующая
+        </span>
         {% endif %}
     </nav>
 </div>

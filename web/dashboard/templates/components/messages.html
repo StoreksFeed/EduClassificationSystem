@@ -2,7 +2,7 @@
 <ul class="mb-4">
     {% for message in messages %}
     <li
-        class="p-2 mb-2 rounded {% if message.tags == 'error' %}bg-red-100 text-red-800 dark:bg-red-900 dark:text-red-200{% else %}bg-green-100 text-green-800 dark:bg-green-900 dark:text-green-200{% endif %}">
+        class="p-4 mb-2 rounded-xl shadow-lg backdrop-blur-md {% if message.tags == 'error' %}bg-red-100/30 text-red-800 dark:bg-red-900/30 dark:text-red-200 {% else %}bg-green-100/30 text-green-800 dark:bg-green-900/30 dark:text-green-200 {% endif %}">
         {{ message }}
     </li>
     {% endfor %}
