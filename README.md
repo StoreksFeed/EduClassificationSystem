@@ -30,6 +30,8 @@ docker-compose up --build
 - [x] Prepare test dataset
 - [x] Update web interface (grid layout and CSS)
 > Now it looks much better and supports dark mode
-- [ ] Make metrics for clustering perfomance based on a book headers
-- [ ] Check options in sklearn.cluster
-- [ ] Compare against STC and Lingo (with the same metrics)
+- [x] Check options in sklearn.cluster
+> Base and advanced text preprocessing, AgglomerativeClustering and KMeans
+- [x] Measure clustering perfomance based on a true headers
+- [x] Compare against Lingo, STC and Random distribution
+> Some nice plots can be found in the Jupyter notebook (results/notebook.ipynb)

@@ -1,6 +1,6 @@
 services:
   db0:
-    image: cassandra:latest
+    image: cassandra:5.0.3
     container_name: cassandra-0
     volumes:
       - cassandra-0:/var/lib/cassandra
@@ -20,7 +20,7 @@ services:
     restart: on-failure
 
   db1:
-    image: cassandra:latest
+    image: cassandra:5.0.3
     container_name: cassandra-1
     volumes:
       - cassandra-1:/var/lib/cassandra

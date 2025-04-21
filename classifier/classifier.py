@@ -10,10 +10,32 @@ import numpy as np
 import torch
 
 from sklearn.cluster import AgglomerativeClustering
+from sklearn.cluster import KMeans
 from sklearn.metrics import silhouette_score
 from sklearn.metrics.pairwise import cosine_similarity
 
 from download import get_model, get_morph
+
+
+def get_clustering(n_clusters, algorithm='agglomerative'):
+    """
+    Return clustering class based on arguments.
+
+    Args:
+        n_clusters (int): number of clusters to initialize alorithm with.
+        algorithm (text): algorithm itself.
+    
+    Returns:
+        BaseEstimator: an instance of clustering algorithm.
+    """
+
+    match algorithm:
+        case 'agglomerative':
+            return AgglomerativeClustering(
+                n_clusters=n_clusters)
+        case 'kmeans':
+            return KMeans(
+                n_clusters=n_clusters, random_state=69)
 
 
 def pad_pring(text, length=80):
@@ -29,32 +51,36 @@ def pad_pring(text, length=80):
     print(f"{'-' * padding} {text} {'-' * padding}")
 
 
-def clean_text(text):
+def clean_text(text, advanced=True):
     """
-    Clean a given text by removing extra spaces, unwanted characters, stopwords,
-    and applying lemmatization for Russian text.
+    Clean a given text by removing extra spaces and (optionally) unwanted characters,
+    stopwords, and applying lemmatization for Russian text.
 
     Args:
         text (str): Input text to be cleaned.
+        advanced (bool): Indicator for advanced processing.
 
     Returns:
         str: Cleaned and preprocessed text.
     """
 
     text = re.sub(r'\s+', ' ', text).strip()
-    text = re.sub(r'[^\w\s.,!?()_[]\-\u2013\u2014]', '', text)
 
-    words = text.split()
+    if advanced:
+        text = re.sub(r'[^\w\s.,!?()_\[\]\-\u2013\u2014]', '', text)
+        text = text.split()
 
-    russian_stopwords, morph = get_morph()
+        russian_stopwords, morph = get_morph()
 
-    cleaned_words = [
-        morph.parse(word)[0].normal_form
-        for word in words
-        if word.lower() not in russian_stopwords
-    ]
+        cleaned_words = [
+            morph.parse(word)[0].normal_form
+            for word in text
+            if word.lower() not in russian_stopwords
+        ]
 
-    return ' '.join(cleaned_words)
+        text = ' '.join(cleaned_words)
+
+    return text
 
 
 def get_bert_embeddings(texts, model_name):
@@ -93,7 +119,7 @@ def best_clustering(embeddings):
     array = np.array([])
 
     for n_clusters in range(3, len(embeddings) // 2):
-        labels = AgglomerativeClustering(
+        labels = get_clustering(
             n_clusters=n_clusters).fit_predict(embeddings)
         silhouette = silhouette_score(embeddings, labels)
         array = np.append(array, silhouette)
@@ -102,7 +128,7 @@ def best_clustering(embeddings):
     best_n_clusters = np.argmax(array) + 3
     print(f'Best number of clusters: {best_n_clusters}')
 
-    labels = AgglomerativeClustering(
+    labels = get_clustering(
         n_clusters=best_n_clusters).fit_predict(embeddings)
 
     return labels
@@ -125,7 +151,7 @@ def clustering(cluster_count=None):
         clean_text(entry['text']) for entry in entries
     ), 'DeepPavlov/rubert-base-cased').reshape((-1, 768))
 
-    pad_pring('K-Means Clustering')
+    pad_pring('Clustering')
     if cluster_count:
         labels = AgglomerativeClustering(
             n_clusters=cluster_count).fit_predict(embeddings)
@@ -189,15 +215,17 @@ def classification(entry_uuid):
     ]
     similarity = cosine_similarity(
         embedding, [np.array(group['vector']) for group in groups]
-    )
+    )[0]
 
-    best_group = None
-    best_similarity = 0.0
+    valid_indices = np.where(similarity >= 0.8)[0]
 
-    for sim, group in zip(similarity[0], groups):
-        if sim >= 0.8 and sim > best_similarity:
-            best_group = group
-            best_similarity = sim
+    if valid_indices.size > 0:
+        best_index = valid_indices[np.argmax(similarity[valid_indices])]
+        best_group = groups[best_index]
+        best_similarity = similarity[best_index]
+    else:
+        best_group = None
+        best_similarity = 0.0
 
     if best_group:
         print(
